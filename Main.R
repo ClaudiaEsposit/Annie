@@ -1,6 +1,6 @@
 library(renv)
 renv::init
-#---------------------------- a)INTRO --------------------------------------####
+#---------------------------- a)Intro --------------------------------------####
 cat('\014')
 rm(list=ls())
 setwd("~/Annie")
@@ -160,4 +160,42 @@ merged_data <- merge(Counterparties_merge, Entities, by.x = "name", by.y = "name
 link_c_e <- merged_data%>%
   select(id.counterparty,id.entity)%>%
   distinct()
+#----------------------------h)Profiling------------------------------------####
+
+#Loans table
+Profile_loans <- ExpData(data=Loans_table,type=2) %>% as.data.frame()
+Profile_loans <- Profile_loans %>%
+  filter(!grepl("numeric", Variable_Type, ignore.case = TRUE))
+Profile_loans <- Profile_loans %>% rename("Variable" = "Variable_Name", "Type" = "Variable_Type",
+                                          "#_Entries" = "Sample_n", "NAs" = "Missing_Count", 
+                                          "%_NAs" ="Per_of_Missing", "#_distinct_values" ="No_of_distinct_values")
+Profile_loans$`%_NAs` <- paste0(Profile_loans$`%_NAs` *100, "%")
+Profile_loans <- Profile_loans %>% select(-NAs)
+
+Profile_numeric_loans <- ExpData(data=Loans_table,type=2, fun = c("mean", "median", "var")) %>% as.data.frame()
+Profile_numeric_loans<-Profile_numeric_loans[complete.cases(Profile_numeric_loans),]
+Profile_numeric_loans <- Profile_numeric_loans %>% rename("Variable" = "Variable_Name", "Type" = "Variable_Type",
+                                              "#_Entries" = "Sample_n", "NAs" = "Missing_Count", 
+                                              "%_NAs" ="Per_of_Missing", "#_distinct_values" ="No_of_distinct_values",
+                                              "Mean (k)" = "mean", "Median (k)" = "median", "Var (M)" = "var")
+Profile_numeric_loans$`% NAs` <- paste0(Profile_numeric_loans$`%_NAs` *100, "%")
+Profile_numeric_loans$`Mean (k)` <- round(Profile_numeric_loans$`Mean (k)`/1000, 2)
+Profile_numeric_loans$`Median (k)` <- round(Profile_numeric_loans$`Median (k)`/1000, 2)
+Profile_numeric_loans$`Var (M)` <- round(Profile_numeric_loans$`Var (M)`/1000000, 2)
+Profile_numeric_loans <- Profile_numeric_loans %>% select(-NAs)
+
+#Counterparties table
+Profile_Counterparties <- ExpData(data=Counterparties,type=2) %>% as.data.frame()
+Profile_Counterparties <- Profile_Counterparties %>% rename("Variable" = "Variable_Name", "Type" = "Variable_Type",
+                                                            "#_Entries" = "Sample_n", "NAs" = "Missing_Count", 
+                                                            "%_NAs" ="Per_of_Missing", "#_distinct_values" ="No_of_distinct_values")
+Profile_Counterparties$`%_NAs` <- paste0(Profile_Counterparties$`%_NAs` *100, "%")
+
+#Entities table
+Profile_Entities <- ExpData(data=Entities,type=2) %>% as.data.frame()
+Profile_Entities <- Profile_Entities %>% rename("Variable" = "Variable_Name", "Type" = "Variable_Type",
+                                                            "#_Entries" = "Sample_n", "NAs" = "Missing_Count", 
+                                                            "%_NAs" ="Per_of_Missing", "#_distinct_values" ="No_of_distinct_values")
+Profile_Entities$`%_NAs` <- paste0(Profile_Entities$`%_NAs` *100, "%")
+
 renv::snapshot()
