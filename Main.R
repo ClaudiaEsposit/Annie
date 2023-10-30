@@ -11,7 +11,15 @@ source("Vanilla.R")
 #----------------------------- b)Check -------------------------------------####
 # Check if all the NDG from NDG are written in the Loans table
 check_values_in_column(NDG, Loans, "NDG")
-
+#Check where are NAs
+Profile_LOANS <- ExpData(data=Loans,type=2) %>% as.data.frame()
+Profile_LOANS <- Profile_LOANS %>%
+  filter(!grepl("numeric", Variable_Type, ignore.case = TRUE))
+Profile_LOANS <- Profile_LOANS %>% rename("Variable" = "Variable_Name", "Type" = "Variable_Type",
+                                          "#_Entries" = "Sample_n", "NAs" = "Missing_Count", 
+                                          "%_NAs" ="Per_of_Missing", "#_distinct_values" ="No_of_distinct_values")
+Profile_LOANS$`%_NAs` <- paste0(Profile_LOANS$`%_NAs` *100, "%")
+Profile_LOANS <- Profile_LOANS %>% select(-NAs)
 #Check the values of total gbv and dates
 Loans_check<- Loans%>%
   select(id.loans,id.bor,gbv.original,principal,interest,expenses,date.origination,date.status)%>%
@@ -42,8 +50,8 @@ dependence_function(Loans, "Loans")
 ##----------------------------------------------------------------------------##
 #-------------------------- d)Loans_Table ---------------------------------#####
 Loans_table <- Loans%>%
-  mutate(originator=NA,ptf=NA,cluster.ptf=NA,penalties=NA,date.last.act=NA,flag.imputed=NA,id.loan=id.loans,status="Borrower",gbv.residual=NA)%>%
-  select(id.loan,id.bor,id.group,originator,ptf,cluster.ptf,type,status,gbv.original,gbv.residual,principal,interest,penalties,expenses,date.origination,date.status,date.last.act,flag.imputed)%>%
+  mutate(originator=NA,ptf=NA,cluster.ptf=NA,penalties=NA,date.last.act=NA,flag.imputed=NA,id.loan=id.loans,status="Borrower",gbv.residual=NA,desc.type=`secured/unsecured`)%>%
+  select(id.loan,id.bor,id.group,originator,ptf,cluster.ptf,type,status,gbv.original,gbv.residual,principal,interest,penalties,expenses,date.origination,date.status,date.last.act,flag.imputed,desc.type)%>%
   distinct()
 ##----------------------------------------------------------------------------##
 #-------------------------- e)Entities_Table -------------------------------####
@@ -197,5 +205,142 @@ Profile_Entities <- Profile_Entities %>% rename("Variable" = "Variable_Name", "T
                                                             "#_Entries" = "Sample_n", "NAs" = "Missing_Count", 
                                                             "%_NAs" ="Per_of_Missing", "#_distinct_values" ="No_of_distinct_values")
 Profile_Entities$`%_NAs` <- paste0(Profile_Entities$`%_NAs` *100, "%")
+#----------------------------i)Table----------------------------------------####
+#SEC/UNSEC
+add_gbv_range_column <- function(data) {
+  breaks <- c(0, 15000, 30000,50000, 100000, 250000,Inf)
+  labels <- c("0-15k", "15-30k", "30-50k", "50-100k", "100-250k","250k+")
+  result <- data %>%
+    mutate(
+      range.gbv = cut(gbv.original, breaks = breaks, labels = labels, right = FALSE)
+    )
+  return(result)
+}
+add_vintage_range_column <- function(data, date_col1, date_col2) {
+  result <- data %>%
+    mutate(
+      date_diff = as.numeric(difftime(data[[date_col1]], data[[date_col2]], units = "days")),
+      range.vintage = cut(date_diff, 
+                          breaks = c(0, 365, 730, 1095, 1825, 3650, Inf), 
+                          labels = c("0y", "1y", "2y", "3-5y", "6-10y", "11-20y"),
+                          right = FALSE)
+    ) %>%
+    select(-date_diff)  # Optionally, remove the temporary date_diff column
+  return(result)
+}
 
+NDG_gbv<-NDG%>%
+  add_type_subject_column()%>%
+  distinct()
+merged_data2 <- merge(NDG_gbv, Loans_table, by.x = "id.bor", by.y = "id.bor", all.x = TRUE)
+merged_data2 <- add_gbv_range_column(merged_data2)
+merged_data2 <- add_vintage_range_column(merged_data2, "date.origination", "date.status")
+sum.borr <-count(Loans_table)
+sum.gbv <-sum(Loans_table$gbv.original)
+sum.principal <-sum(Loans_table$principal)
+gbv_help <- merged_data2 %>%
+  select(desc.type, type.subject, gbv.original, principal) %>%
+  group_by(desc.type, type.subject) %>%
+  summarize(
+    numb.borr = n(),perc.borr = sum(numb.borr) / sum(sum.borr),gbv.original = sum(gbv.original),
+    mean.gbv = mean(gbv.original),perc.gbv = sum(gbv.original) / sum(sum.gbv),
+    capital = sum(principal),mean.capital = mean(principal),
+    perc.capital = sum(principal) / sum(sum.principal)
+  )
+
+total_row <- data.frame(
+  desc.type = "Total",type.subject = "",
+  gbv.original = sum(gbv_help$gbv.original),numb.borr = sum(gbv_help$numb.borr), perc.borr = sum(gbv_help$perc.borr),
+  mean.gbv = sum(gbv_help$mean.gbv * gbv_help$numb.borr) / sum(gbv_help$numb.borr),
+  perc.gbv = sum(gbv_help$perc.gbv),capital=sum(gbv_help$capital),
+  mean.capital = sum(gbv_help$mean.capital * gbv_help$numb.borr) / sum(gbv_help$numb.borr),
+  perc.capital = sum(gbv_help$perc.capital))
+
+updated_df <- bind_rows(gbv_help, total_row)
+updated_df<-updated_df%>%
+  rename("Sec/Unsec per id.borr"=desc.type,"Type of Company"=type.subject,"N Bor"=numb.borr,
+         "% Bor"=perc.borr,"GBV(k)"=gbv.original,"Mean GBV(k)"=mean.gbv,"% GBV"=perc.gbv,
+         "Capital(k)"=capital,"Mean Capital(k)"=mean.capital,"% Capital"=perc.capital)
+#updated_df$perc.gbv <- percent(updated_df$perc.gbv, scale=100)
+#updated_df$mean.gbv <- round(updated_df$mean.gbv, digits=1)
+
+#SEC/UNSEC + RANGE GBV
+range <- merged_data2 %>%
+  select(desc.type, range.gbv,gbv.original, principal) %>%
+  group_by(desc.type,range.gbv) %>%
+  summarize(
+    numb.borr = n(),perc.borr = sum(numb.borr) / sum(sum.borr),gbv.original = sum(gbv.original),
+    mean.gbv = mean(gbv.original),perc.gbv = sum(gbv.original) / sum(sum.gbv),
+    capital = sum(principal),mean.capital = mean(principal),
+    perc.capital = sum(principal) / sum(sum.principal)
+  )
+
+total_row_range <- data.frame(
+  desc.type = "Total",range.gbv = "",
+  gbv.original = sum(range$gbv.original),numb.borr = sum(range$numb.borr), perc.borr = sum(range$perc.borr),
+  mean.gbv = sum(range$mean.gbv * range$numb.borr) / sum(range$numb.borr),
+  perc.gbv = sum(range$perc.gbv),capital=sum(range$capital),
+  mean.capital = sum(range$mean.capital * range$numb.borr) / sum(range$numb.borr),
+  perc.capital = sum(range$perc.capital))
+
+updated_range <- bind_rows(range, total_row_range)
+updated_range<-updated_range%>%
+  rename("Sec/Unsec per id.borr"=desc.type,"Range GBV"=range.gbv,"N Bor"=numb.borr,
+         "% Bor"=perc.borr,"GBV(k)"=gbv.original,"Mean GBV(k)"=mean.gbv,"% GBV"=perc.gbv,
+         "Capital(k)"=capital,"Mean Capital(k)"=mean.capital,"% Capital"=perc.capital)%>%
+  arrange(factor(`Sec/Unsec per id.borr`, levels = c("secured", "unsecured", "Total")),
+    factor(`Range GBV`,levels = c("0-15k", "15-30k", "30-50k","50-100k","100-250k","250k+")))
+
+#SEC/UNSEC + RANGE Vintage
+vintage <- merged_data2 %>%
+  select(desc.type, range.vintage,gbv.original, principal) %>%
+  group_by(desc.type,range.vintage) %>%
+  summarize(
+    numb.borr = n(),perc.borr = sum(numb.borr) / sum(sum.borr),gbv.original = sum(gbv.original),
+    mean.gbv = mean(gbv.original),perc.gbv = sum(gbv.original) / sum(sum.gbv),
+    capital = sum(principal),mean.capital = mean(principal),
+    perc.capital = sum(principal) / sum(sum.principal)
+  )
+
+total_row_vintage <- data.frame(
+  desc.type = "Total",range.vintage = "",
+  gbv.original = sum(vintage$gbv.original),numb.borr = sum(vintage$numb.borr), perc.borr = sum(vintage$perc.borr),
+  mean.gbv = sum(vintage$mean.gbv * vintage$numb.borr) / sum(vintage$numb.borr),
+  perc.gbv = sum(vintage$perc.gbv),capital=sum(vintage$capital),
+  mean.capital = sum(vintage$mean.capital * vintage$numb.borr) / sum(vintage$numb.borr),
+  perc.capital = sum(vintage$perc.capital))
+
+updated_vintage <- bind_rows(vintage, total_row_vintage)
+updated_vintage<-updated_vintage%>%
+  rename("Sec/Unsec per id.borr"=desc.type,"Range Vintage"=range.vintage,"N Bor"=numb.borr,
+         "% Bor"=perc.borr,"GBV(k)"=gbv.original,"Mean GBV(k)"=mean.gbv,"% GBV"=perc.gbv,
+         "Capital(k)"=capital,"Mean Capital(k)"=mean.capital,"% Capital"=perc.capital)%>%
+  arrange(factor(`Sec/Unsec per id.borr`, levels = c("secured", "unsecured", "Total")),
+          factor(`Range Vintage`,levels = c("0y", "1y", "2y", "3-5y", "6-10y","11-20y")))
+
+
+# Type Loans
+type_loans <- merged_data2 %>%
+  select(type, gbv.original, principal) %>%
+  group_by(type) %>%
+  summarize(
+    numb.borr = n(),perc.borr = sum(numb.borr) / sum(sum.borr),gbv.original = sum(gbv.original),
+    mean.gbv = mean(gbv.original),perc.gbv = sum(gbv.original) / sum(sum.gbv),
+    capital = sum(principal),mean.capital = mean(principal),
+    perc.capital = sum(principal) / sum(sum.principal)
+  )
+
+total_row_loans <- data.frame(
+  type = "Total",gbv.original = sum(type_loans$gbv.original),numb.borr = sum(type_loans$numb.borr), perc.borr = sum(type_loans$perc.borr),
+  mean.gbv = sum(type_loans$mean.gbv * type_loans$numb.borr) / sum(type_loans$numb.borr),
+  perc.gbv = sum(type_loans$perc.gbv),capital=sum(type_loans$capital),
+  mean.capital = sum(type_loans$mean.capital * type_loans$numb.borr) / sum(type_loans$numb.borr),
+  perc.capital = sum(type_loans$perc.capital))
+
+updated_loans <- bind_rows(type_loans, total_row_loans)
+updated_loans<-updated_loans%>%
+  rename("Type of Credit"=type,"N Bor"=numb.borr,
+         "% Bor"=perc.borr,"GBV(k)"=gbv.original,"Mean GBV(k)"=mean.gbv,"% GBV"=perc.gbv,
+         "Capital(k)"=capital,"Mean Capital(k)"=mean.capital,"% Capital"=perc.capital)
+#-----------------------------------------------------------------------------
 renv::snapshot()
