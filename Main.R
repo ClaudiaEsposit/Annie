@@ -1,7 +1,9 @@
+library(renv)
+renv::init
 #---------------------------- a)INTRO --------------------------------------####
 cat('\014')
 rm(list=ls())
-setwd("~/Custom Office Templates/Annia")
+setwd("~/Annie")
 source("Library.R")
 source("Functions.R")
 source("Vanilla.R")
@@ -158,3 +160,4 @@ merged_data <- merge(Counterparties_merge, Entities, by.x = "name", by.y = "name
 link_c_e <- merged_data%>%
   select(id.counterparty,id.entity)%>%
   distinct()
+renv::snapshot()
