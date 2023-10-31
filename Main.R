@@ -50,8 +50,12 @@ dependence_function(Loans, "Loans")
 ##----------------------------------------------------------------------------##
 #-------------------------- d)Loans_Table ---------------------------------#####
 Loans_table <- Loans%>%
-  mutate(originator=NA,ptf=NA,cluster.ptf=NA,penalties=NA,date.last.act=NA,flag.imputed=NA,id.loan=id.loans,status="Borrower",gbv.residual=NA,desc.type=`secured/unsecured`)%>%
-  select(id.loan,id.bor,id.group,originator,ptf,cluster.ptf,type,status,gbv.original,gbv.residual,principal,interest,penalties,expenses,date.origination,date.status,date.last.act,flag.imputed,desc.type)%>%
+  mutate(originator=NA,ptf=NA,cluster.ptf=NA,penalties=NA,date.last.act=NA,
+         flag.imputed=NA,id.loan=id.loans,status="Borrower",gbv.residual=NA,
+         desc.type=`secured/unsecured`,desc.guarantors=role)%>%
+  select(id.loan,id.bor,id.group,originator,ptf,cluster.ptf,type,status,
+         gbv.original,gbv.residual,principal,interest,penalties,expenses,
+         date.origination,date.status,date.last.act,flag.imputed,desc.type,desc.guarantors)%>%
   distinct()
 ##----------------------------------------------------------------------------##
 #-------------------------- e)Entities_Table -------------------------------####
@@ -342,5 +346,27 @@ updated_loans<-updated_loans%>%
   rename("Type of Credit"=type,"N Bor"=numb.borr,
          "% Bor"=perc.borr,"GBV(k)"=gbv.original,"Mean GBV(k)"=mean.gbv,"% GBV"=perc.gbv,
          "Capital(k)"=capital,"Mean Capital(k)"=mean.capital,"% Capital"=perc.capital)
+
+#Guarantors
+guarantors <- merged_data2 %>%
+  select(desc.type,desc.guarantors,gbv.original) %>%
+  group_by(desc.type,desc.guarantors) %>%
+  summarize(
+    numb.borr = n(),perc.borr = sum(numb.borr) / sum(sum.borr),gbv.original = sum(gbv.original),
+    mean.gbv = mean(gbv.original),perc.gbv = sum(gbv.original) / sum(sum.gbv)
+  )
+
+total_row_guarantors <- data.frame(
+  desc.type = "Total",desc.guarantors = "",
+  gbv.original = sum(guarantors$gbv.original),numb.borr = sum(guarantors$numb.borr), perc.borr = sum(guarantors$perc.borr),
+  mean.gbv = sum(guarantors$mean.gbv * guarantors$numb.borr) / sum(guarantors$numb.borr),
+  perc.gbv = sum(guarantors$perc.gbv))
+
+updated_guarantors <- bind_rows(guarantors, total_row_guarantors)
+updated_guarantors<-updated_guarantors%>%
+  rename("Sec/Unsec per id.borr"=desc.type,"Guarantors"=desc.guarantors,"N Bor"=numb.borr,
+         "% Bor"=perc.borr,"GBV(k)"=gbv.original,"Mean GBV(k)"=mean.gbv,"% GBV"=perc.gbv)%>%
+  arrange(factor(`Sec/Unsec per id.borr`, levels = c("secured", "unsecured", "Total")),
+          factor(`Guarantors`,levels = c("Yes","No")))
 #-----------------------------------------------------------------------------
 renv::snapshot()
