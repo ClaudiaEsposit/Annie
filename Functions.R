@@ -247,3 +247,27 @@ change_type_credit <- function(data) {
 #example
 #Loans_new <- change_type_credit(Loans_new)
 
+#vintage range column
+add_vintage_range_column <- function(data, date_col1, date_col2) {
+  result <- data %>%
+    mutate(
+      date_diff = as.numeric(difftime(data[[date_col1]], data[[date_col2]], units = "days")),
+      range.vintage = cut(date_diff, 
+                          breaks = c(0, 365, 730, 1095, 1825, 3650, Inf), 
+                          labels = c("0y", "1y", "2y", "3-5y", "6-10y", "11-20y"),
+                          right = FALSE)
+    ) %>%
+    select(-date_diff)
+  return(result)
+}
+
+#gbv range column
+add_gbv_range_column <- function(data) {
+  breaks <- c(0, 15000, 30000,50000, 100000, 200000, 300000,500000,Inf)
+  labels <- c("0-15k", "15-30k", "30-50k", "50-100k", "100-200k","200-300k","300-500k","500k+")
+  result <- data %>%
+    mutate(
+      range.gbv = cut(gbv, breaks = breaks, labels = labels, right = FALSE)
+    )
+  return(result)
+}

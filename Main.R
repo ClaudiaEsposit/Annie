@@ -44,8 +44,8 @@ Loans_check %>%
 primary_key(NDG)
 primary_key(Loans)
 # Functional dependence
-dependence_function(NDG, "NDG")
-dependence_function(Loans, "Loans")
+#dependence_function(NDG, "NDG")
+#dependence_function(Loans, "Loans")
 
 ##----------------------------------------------------------------------------##
 #-------------------------- d)Loans_Table ---------------------------------#####
@@ -153,7 +153,7 @@ Counterparties <- NDG_count%>%
   mutate(n.entities=NA,flag.imputed=NA)%>%
   distinct()
 Counterparties$id.counterparty <- paste("c_",1:nrow(Counterparties), sep = "")
-Counterparties$n.entities <- str_count(Counterparties$name, ",") + 1
+Counterparties$n.entities <- str_count(Counterparties$name, "[,-]") + 1
 Counterparties <- Counterparties%>%
   select(id.counterparty,id.bor,id.group,role,name,n.entities,flag.imputed)%>%
   mutate(role = as.factor(role),n.entities = as.integer(n.entities),
@@ -209,164 +209,103 @@ Profile_Entities <- Profile_Entities %>% rename("Variable" = "Variable_Name", "T
                                                             "#_Entries" = "Sample_n", "NAs" = "Missing_Count", 
                                                             "%_NAs" ="Per_of_Missing", "#_distinct_values" ="No_of_distinct_values")
 Profile_Entities$`%_NAs` <- paste0(Profile_Entities$`%_NAs` *100, "%")
-#----------------------------i)Table----------------------------------------####
-#SEC/UNSEC
-add_gbv_range_column <- function(data) {
-  breaks <- c(0, 15000, 30000,50000, 100000, 250000,Inf)
-  labels <- c("0-15k", "15-30k", "30-50k", "50-100k", "100-250k","250k+")
-  result <- data %>%
-    mutate(
-      range.gbv = cut(gbv.original, breaks = breaks, labels = labels, right = FALSE)
-    )
-  return(result)
-}
-add_vintage_range_column <- function(data, date_col1, date_col2) {
-  result <- data %>%
-    mutate(
-      date_diff = as.numeric(difftime(data[[date_col1]], data[[date_col2]], units = "days")),
-      range.vintage = cut(date_diff, 
-                          breaks = c(0, 365, 730, 1095, 1825, 3650, Inf), 
-                          labels = c("0y", "1y", "2y", "3-5y", "6-10y", "11-20y"),
-                          right = FALSE)
-    ) %>%
-    select(-date_diff)  # Optionally, remove the temporary date_diff column
-  return(result)
-}
+#----------------------------i)Table--------------------------------------####
+source("Tables_excel.R")
+#------------------------------p)Excel-------------------------------------####
 
-NDG_gbv<-NDG%>%
-  add_type_subject_column()%>%
-  distinct()
-merged_data2 <- merge(NDG_gbv, Loans_table, by.x = "id.bor", by.y = "id.bor", all.x = TRUE)
-merged_data2 <- add_gbv_range_column(merged_data2)
-merged_data2 <- add_vintage_range_column(merged_data2, "date.origination", "date.status")
-sum.borr <-count(Loans_table)
-sum.gbv <-sum(Loans_table$gbv.original)
-sum.principal <-sum(Loans_table$principal)
-gbv_help <- merged_data2 %>%
-  select(desc.type, type.subject, gbv.original, principal) %>%
-  group_by(desc.type, type.subject) %>%
-  summarize(
-    numb.borr = n(),perc.borr = sum(numb.borr) / sum(sum.borr),gbv.original = sum(gbv.original),
-    mean.gbv = mean(gbv.original),perc.gbv = sum(gbv.original) / sum(sum.gbv),
-    capital = sum(principal),mean.capital = mean(principal),
-    perc.capital = sum(principal) / sum(sum.principal)
-  )
+source("Excel_format.R")
+wb <- createWorkbook()
+addWorksheet(wb, "Tables")
+writeDataTable(wb, 1, total_table, startRow = startRow, startCol = startCol, tableStyle = "TableStylelight9")
+column_types <- c("number","number","currency", "currency","currency")
+addStyle(wb,1,style=createStyle(numFmt = "[>=1000] #,##0,\"K\";[=0]\"-\";#0"),rows=4, cols=2:6)
+writeData(wb, 1, x = "Overview", startCol = startCol, startRow = startRow-1)
+mergeCells(wb, 1, startCol:(startCol + ncol(total_table) - 1), rows = startRow-1)
+addStyle(wb, 1, style = title_style,rows = startRow-1, cols = startCol:(startCol + ncol(total_table) - 1), gridExpand = TRUE)
+addStyle(wb, 1, style = section_style,rows = startRow+nrow(total_table),
+         cols = startCol:(startCol + ncol(total_table) - 1), gridExpand = TRUE,stack = TRUE)
 
-total_row <- data.frame(
-  desc.type = "Total",type.subject = "",
-  gbv.original = sum(gbv_help$gbv.original),numb.borr = sum(gbv_help$numb.borr), perc.borr = sum(gbv_help$perc.borr),
-  mean.gbv = sum(gbv_help$mean.gbv * gbv_help$numb.borr) / sum(gbv_help$numb.borr),
-  perc.gbv = sum(gbv_help$perc.gbv),capital=sum(gbv_help$capital),
-  mean.capital = sum(gbv_help$mean.capital * gbv_help$numb.borr) / sum(gbv_help$numb.borr),
-  perc.capital = sum(gbv_help$perc.capital))
+#formatting sec unsec
+startRow_updated <- startRow+nrow(total_table)+3
+writeDataTable(wb, 1, updated_df, startRow = startRow_updated, startCol = startCol, tableStyle = "TableStylelight9")
+column_types <- c("general", "general", "number", "percentage", "currency", "currency", "percentage", "currency", "currency","percentage")
+applyStylesToColumns(wb, updated_df, column_types, startRow_updated, startCol)
+writeData(wb, 1, x = "Sec/Unsec", startCol = startCol, startRow = startRow_updated-1)
+mergeCells(wb, 1, startCol:(startCol + ncol(updated_df) - 1), rows = startRow_updated-1)
+applyCustomStyles(wb, updated_df, startRow_updated, startCol)
 
-updated_df <- bind_rows(gbv_help, total_row)
-updated_df<-updated_df%>%
-  rename("Sec/Unsec per id.borr"=desc.type,"Type of Company"=type.subject,"N Bor"=numb.borr,
-         "% Bor"=perc.borr,"GBV(k)"=gbv.original,"Mean GBV(k)"=mean.gbv,"% GBV"=perc.gbv,
-         "Capital(k)"=capital,"Mean Capital(k)"=mean.capital,"% Capital"=perc.capital)
-#updated_df$perc.gbv <- percent(updated_df$perc.gbv, scale=100)
-#updated_df$mean.gbv <- round(updated_df$mean.gbv, digits=1)
+#formatting range
+startRow_range <- startRow_updated+nrow(updated_df)+3
+writeDataTable(wb,1, updated_range, startRow = startRow_range, startCol = startCol, tableStyle = "TableStylelight9")
+column_types <- c("general", "general", "number", "percentage", "currency", "currency", "percentage", "currency", "currency","percentage")
+applyStylesToColumns(wb, updated_range, column_types, startRow_range, startCol)
+writeData(wb, 1, x = "Sec/Unsec + Range GBV", startCol = startCol, startRow = startRow_range-1)
+mergeCells(wb, 1, startCol:(startCol + ncol(updated_range) - 1), rows = startRow_range-1)
+applyCustomStyles(wb, updated_range, startRow_range, startCol)
 
-#SEC/UNSEC + RANGE GBV
-range <- merged_data2 %>%
-  select(desc.type, range.gbv,gbv.original, principal) %>%
-  group_by(desc.type,range.gbv) %>%
-  summarize(
-    numb.borr = n(),perc.borr = sum(numb.borr) / sum(sum.borr),gbv.original = sum(gbv.original),
-    mean.gbv = mean(gbv.original),perc.gbv = sum(gbv.original) / sum(sum.gbv),
-    capital = sum(principal),mean.capital = mean(principal),
-    perc.capital = sum(principal) / sum(sum.principal)
-  )
+#formatting vintage
+startRow_vintage <- startRow_range+nrow(updated_range)+3
+writeDataTable(wb,1, updated_vintage, startRow = startRow_vintage, startCol = startCol, tableStyle = "TableStylelight9")
+column_types <- c("general", "general", "number", "percentage", "currency", "currency", "percentage", "currency", "currency","percentage")
+applyStylesToColumns(wb, updated_range, column_types, startRow_vintage, startCol)
+writeData(wb, 1, x = "Sec/Unsec + Range Vintage", startCol = startCol, startRow = startRow_vintage-1)
+mergeCells(wb, 1, startCol:(startCol + ncol(updated_vintage) - 1), startRow_vintage-1)
+applyCustomStyles(wb, updated_vintage, startRow_vintage, startCol)
 
-total_row_range <- data.frame(
-  desc.type = "Total",range.gbv = "",
-  gbv.original = sum(range$gbv.original),numb.borr = sum(range$numb.borr), perc.borr = sum(range$perc.borr),
-  mean.gbv = sum(range$mean.gbv * range$numb.borr) / sum(range$numb.borr),
-  perc.gbv = sum(range$perc.gbv),capital=sum(range$capital),
-  mean.capital = sum(range$mean.capital * range$numb.borr) / sum(range$numb.borr),
-  perc.capital = sum(range$perc.capital))
+#formatting loans
+startRow_loans <- startRow_vintage+nrow(updated_vintage)+3
+writeDataTable(wb,1, updated_loans, startRow = startRow_loans, startCol = startCol, tableStyle = "TableStylelight9")
+column_types <- c("general", "number", "percentage", "currency", "currency", "percentage", "currency", "currency","percentage")
+applyStylesToColumns(wb, updated_loans, column_types, startRow_loans, startCol)
+writeData(wb, 1, x = "Type Loans by Borrower", startCol, startRow_loans-1)
+mergeCells(wb, 1, startCol:(startCol + ncol(updated_loans) - 1),startRow_loans-1)
+applyCustomStyles(wb, updated_loans, startRow_loans, startCol)
 
-updated_range <- bind_rows(range, total_row_range)
-updated_range<-updated_range%>%
-  rename("Sec/Unsec per id.borr"=desc.type,"Range GBV"=range.gbv,"N Bor"=numb.borr,
-         "% Bor"=perc.borr,"GBV(k)"=gbv.original,"Mean GBV(k)"=mean.gbv,"% GBV"=perc.gbv,
-         "Capital(k)"=capital,"Mean Capital(k)"=mean.capital,"% Capital"=perc.capital)%>%
-  arrange(factor(`Sec/Unsec per id.borr`, levels = c("secured", "unsecured", "Total")),
-    factor(`Range GBV`,levels = c("0-15k", "15-30k", "30-50k","50-100k","100-250k","250k+")))
+#formatting guarantors
+startRow_guarantors <- startRow_loans+nrow(updated_loans)+3
+writeDataTable(wb,1, updated_guarantors, startRow = startRow_guarantors, startCol = startCol, tableStyle = "TableStylelight9")
+column_types <- c("general", "general", "number", "percentage", "currency","currency", "percentage")
+applyStylesToColumns(wb, updated_guarantors, column_types, startRow_guarantors, startCol)
+writeData(wb, 1, x = "Guarantors", startCol, startRow_guarantors-1)
+mergeCells(wb, 1, startCol:(startCol + ncol(updated_guarantors) - 1), startRow_guarantors-1)
+applyCustomStyles(wb, updated_guarantors, startRow_guarantors, startCol)
 
-#SEC/UNSEC + RANGE Vintage
-vintage <- merged_data2 %>%
-  select(desc.type, range.vintage,gbv.original, principal) %>%
-  group_by(desc.type,range.vintage) %>%
-  summarize(
-    numb.borr = n(),perc.borr = sum(numb.borr) / sum(sum.borr),gbv.original = sum(gbv.original),
-    mean.gbv = mean(gbv.original),perc.gbv = sum(gbv.original) / sum(sum.gbv),
-    capital = sum(principal),mean.capital = mean(principal),
-    perc.capital = sum(principal) / sum(sum.principal)
-  )
+#formatting utp
+startRow_utp <- startRow_guarantors+nrow(updated_guarantors)+3
+writeDataTable(wb,1, updated_utp, startRow = startRow_utp, startCol = startCol, tableStyle = "TableStylelight9")
+column_types <- c("general", "number", "percentage", "currency", "currency", "percentage", "currency", "currency","percentage")
+applyStylesToColumns(wb, updated_utp, column_types, startRow_utp, startCol)
+writeData(wb, 1, x = "GBV by Status of Loan per Borrower", startCol, startRow_utp-1)
+mergeCells(wb, 1, startCol:(startCol + ncol(updated_utp) - 1),startRow_utp-1)
+applyCustomStyles(wb, updated_utp, startRow_utp, startCol)
 
-total_row_vintage <- data.frame(
-  desc.type = "Total",range.vintage = "",
-  gbv.original = sum(vintage$gbv.original),numb.borr = sum(vintage$numb.borr), perc.borr = sum(vintage$perc.borr),
-  mean.gbv = sum(vintage$mean.gbv * vintage$numb.borr) / sum(vintage$numb.borr),
-  perc.gbv = sum(vintage$perc.gbv),capital=sum(vintage$capital),
-  mean.capital = sum(vintage$mean.capital * vintage$numb.borr) / sum(vintage$numb.borr),
-  perc.capital = sum(vintage$perc.capital))
+#formatting entities
+startRow_ent <- startRow_utp+nrow(updated_utp)+3
+writeDataTable(wb,1, updated_ent, startRow = startRow_ent, startCol = startCol, tableStyle = "TableStylelight9")
+column_types <- c("general", "number", "percentage", "currency", "currency", "percentage", "currency", "currency","percentage")
+applyStylesToColumns(wb, updated_ent, column_types, startRow_ent, startCol)
+writeData(wb, 1, x = "GBV by number of Entities per Borrower", startCol, startRow_ent-1)
+mergeCells(wb, 1, startCol:(startCol + ncol(updated_ent) - 1),startRow_ent-1)
+applyCustomStyles(wb, updated_ent, startRow_ent, startCol)
 
-updated_vintage <- bind_rows(vintage, total_row_vintage)
-updated_vintage<-updated_vintage%>%
-  rename("Sec/Unsec per id.borr"=desc.type,"Range Vintage"=range.vintage,"N Bor"=numb.borr,
-         "% Bor"=perc.borr,"GBV(k)"=gbv.original,"Mean GBV(k)"=mean.gbv,"% GBV"=perc.gbv,
-         "Capital(k)"=capital,"Mean Capital(k)"=mean.capital,"% Capital"=perc.capital)%>%
-  arrange(factor(`Sec/Unsec per id.borr`, levels = c("secured", "unsecured", "Total")),
-          factor(`Range Vintage`,levels = c("0y", "1y", "2y", "3-5y", "6-10y","11-20y")))
+#formatting province
+startRow_pro <- startRow_ent+nrow(updated_ent)+3
+writeDataTable(wb,1, updated_pro, startRow = startRow_pro, startCol = startCol, tableStyle = "TableStylelight9")
+column_types <- c("general", "number", "percentage", "currency", "currency", "percentage", "currency", "currency","percentage")
+applyStylesToColumns(wb, updated_pro, column_types, startRow_pro, startCol)
+writeData(wb, 1, x = "GBV by Province of Borrower", startCol, startRow_pro-1)
+mergeCells(wb, 1, startCol:(startCol + ncol(updated_pro) - 1),startRow_pro-1)
+applyCustomStyles(wb, updated_pro, startRow_pro, startCol)
 
+#formatting type by loans
+startRow_typ <- startRow_pro+nrow(updated_pro)+3
+writeDataTable(wb,1, updated_type, startRow = startRow_typ, startCol = startCol, tableStyle = "TableStylelight9")
+column_types <- c("general", "number", "percentage", "currency", "currency", "percentage")
+applyStylesToColumns(wb, updated_type, column_types, startRow_typ, startCol)
+writeData(wb, 1, x = "GBV by Type of Loans", startCol, startRow_typ-1)
+mergeCells(wb, 1, startCol:(startCol + ncol(updated_type) - 1),startRow_typ-1)
+applyCustomStyles(wb, updated_type, startRow_typ, startCol)
+saveWorkbook(wb,"Tables.xlsx", overwrite = TRUE)
 
-# Type Loans
-type_loans <- merged_data2 %>%
-  select(type, gbv.original, principal) %>%
-  group_by(type) %>%
-  summarize(
-    numb.borr = n(),perc.borr = sum(numb.borr) / sum(sum.borr),gbv.original = sum(gbv.original),
-    mean.gbv = mean(gbv.original),perc.gbv = sum(gbv.original) / sum(sum.gbv),
-    capital = sum(principal),mean.capital = mean(principal),
-    perc.capital = sum(principal) / sum(sum.principal)
-  )
-
-total_row_loans <- data.frame(
-  type = "Total",gbv.original = sum(type_loans$gbv.original),numb.borr = sum(type_loans$numb.borr), perc.borr = sum(type_loans$perc.borr),
-  mean.gbv = sum(type_loans$mean.gbv * type_loans$numb.borr) / sum(type_loans$numb.borr),
-  perc.gbv = sum(type_loans$perc.gbv),capital=sum(type_loans$capital),
-  mean.capital = sum(type_loans$mean.capital * type_loans$numb.borr) / sum(type_loans$numb.borr),
-  perc.capital = sum(type_loans$perc.capital))
-
-updated_loans <- bind_rows(type_loans, total_row_loans)
-updated_loans<-updated_loans%>%
-  rename("Type of Credit"=type,"N Bor"=numb.borr,
-         "% Bor"=perc.borr,"GBV(k)"=gbv.original,"Mean GBV(k)"=mean.gbv,"% GBV"=perc.gbv,
-         "Capital(k)"=capital,"Mean Capital(k)"=mean.capital,"% Capital"=perc.capital)
-
-#Guarantors
-guarantors <- merged_data2 %>%
-  select(desc.type,desc.guarantors,gbv.original) %>%
-  group_by(desc.type,desc.guarantors) %>%
-  summarize(
-    numb.borr = n(),perc.borr = sum(numb.borr) / sum(sum.borr),gbv.original = sum(gbv.original),
-    mean.gbv = mean(gbv.original),perc.gbv = sum(gbv.original) / sum(sum.gbv)
-  )
-
-total_row_guarantors <- data.frame(
-  desc.type = "Total",desc.guarantors = "",
-  gbv.original = sum(guarantors$gbv.original),numb.borr = sum(guarantors$numb.borr), perc.borr = sum(guarantors$perc.borr),
-  mean.gbv = sum(guarantors$mean.gbv * guarantors$numb.borr) / sum(guarantors$numb.borr),
-  perc.gbv = sum(guarantors$perc.gbv))
-
-updated_guarantors <- bind_rows(guarantors, total_row_guarantors)
-updated_guarantors<-updated_guarantors%>%
-  rename("Sec/Unsec per id.borr"=desc.type,"Guarantors"=desc.guarantors,"N Bor"=numb.borr,
-         "% Bor"=perc.borr,"GBV(k)"=gbv.original,"Mean GBV(k)"=mean.gbv,"% GBV"=perc.gbv)%>%
-  arrange(factor(`Sec/Unsec per id.borr`, levels = c("secured", "unsecured", "Total")),
-          factor(`Guarantors`,levels = c("Yes","No")))
 #-----------------------------------------------------------------------------
 renv::snapshot()
