@@ -1,25 +1,33 @@
-add_age_column <- function(data) {
-  data <- data %>%
-    mutate(
-      age = ifelse(
-        !is.na(cf.piva) & nchar(cf.piva) >= 16,  # Check if cf.piva is not NA and has at least 16 characters
-        with(data, {
-          year_of_birth <- as.numeric(stringr::str_sub(cf.piva, start = 7L, end = 8L))
-          current_year <- as.numeric(format(Sys.Date(), "%Y"))
-          ifelse(
-            year_of_birth >= 0 & year_of_birth <= (current_year - 2018),
-            current_year - (2000 + year_of_birth),
-            current_year - (1900 + year_of_birth)
-          )
-        }),
-        NA
-      )
-    )
-  
-  return(data)
+add_type_lien <- function(data) {
+  result <- data %>%
+    mutate(origin.lien = case_when(
+      str_detect(origin.lien, "volontaria")  ~ "Voluntary",
+      str_detect(origin.lien, "giudiziale")  ~ "Judicial",
+      TRUE ~ NA
+    ))
 }
-#EXAMPLE
-#Entities <- add_age_column(Entities)
+add_status_guar <- function(data) {
+  result <- data %>%
+    mutate(status = case_when(
+      str_detect(status, "non escussa")  ~ "Valid",
+      TRUE ~ NA
+    ))
+}
+add_type_guar <- function(data) {
+  result <- data %>%
+    mutate(type = case_when(
+      str_detect(type, "fideiussione|fidejussione")  ~ "Surety",
+      TRUE ~ NA
+    ))
+}
+
+clean_lien <- function(data) {
+  result <- data %>%
+    mutate(amount.guarantee = case_when(
+      str_detect(amount.guarantee, "surroghe")  ~ NA,
+      TRUE ~ amount.guarantee
+    ))
+}
 
 add_age_column <- function(data) {
   data <- data %>%
@@ -253,8 +261,8 @@ add_vintage_range_column <- function(data, date_col1, date_col2) {
     mutate(
       date_diff = as.numeric(difftime(data[[date_col1]], data[[date_col2]], units = "days")),
       range.vintage = cut(date_diff, 
-                          breaks = c(0, 365, 730, 1095, 1825, 3650, Inf), 
-                          labels = c("0y", "1y", "2y", "3-5y", "6-10y", "11-20y"),
+                          breaks = c(0, 365, 730, 1095, 1825, 3650, 18250, Inf), 
+                          labels = c("0y", "1y", "2y", "3-5y", "6-10y", "11-20y","20-50y","50y+"),
                           right = FALSE)
     ) %>%
     select(-date_diff)
